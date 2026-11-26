@@ -94,8 +94,21 @@ final class ImportacaoViewModel: ObservableObject {
                 let extraidos = try await interpretador.interpretar(
                     texto: fatura.textoExtraido
                 )
+                
+                print("Fatura: \(fatura.nomeArquivo)")
+                print("Quantidade extraída: \(extraidos.count)")
 
-                for item in extraidos where item.tipo != "pagamento" {  
+                for item in extraidos {
+                    print("""
+                    Data: \(item.data)
+                    Descrição: \(item.descricao)
+                    Valor: \(item.valorOriginal)
+                    Tipo: \(item.tipo)
+                    --------------------
+                    """)
+                }
+                
+                for item in extraidos where item.tipo != "pagamento" {
 
                     guard let valor = ConversorMonetario
                         .converterParaCentavos(item.valorOriginal) else {

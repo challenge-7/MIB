@@ -117,6 +117,21 @@ struct InterpretadorFaturaService {
           do campo correspondente à transação.
         - Não utilize números presentes na descrição
           como valores financeiros.
+        
+        REGRAS DE EXTRAÇÃO:
+        - Extraia cada linha de transação apenas uma vez.
+        - Cada lançamento retornado deve corresponder a uma
+          transação individual presente no documento.
+        - Não repita transações já extraídas.
+        - Não crie lançamentos adicionais para completar
+          ou continuar uma sequência.
+        - Preserve a correspondência original entre
+          data, descrição e valor.
+        - Nunca associe a data de uma transação
+          ao estabelecimento de outra.
+        - Não invente transações ausentes no documento.
+        - Se houver duas compras idênticas em linhas
+          diferentes do documento, preserve ambas.
         """
 
         // Uma sessão nova para cada interpretação.
