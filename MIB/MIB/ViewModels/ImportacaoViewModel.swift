@@ -95,7 +95,7 @@ final class ImportacaoViewModel: ObservableObject {
                     texto: fatura.textoExtraido
                 )
 
-                for item in extraidos {
+                for item in extraidos where item.tipo != "pagamento" {  
 
                     guard let valor = ConversorMonetario
                         .converterParaCentavos(item.valorOriginal) else {

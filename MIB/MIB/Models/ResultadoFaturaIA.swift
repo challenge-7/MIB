@@ -14,8 +14,20 @@ struct LancamentoExtraido {
     @Guide(description: "Data da transação no formato DD/MM/AAAA")
     var data: String
 
-    @Guide(description: "Descrição original do lançamento")
+    
+    @Guide(description: """
+    Nome do estabelecimento ou descrição textual da transação.
+
+    Não inclua a data nem o valor monetário neste campo.
+
+    Exemplo correto:
+    SUPERMERCADO SOL
+
+    Exemplo incorreto:
+    SUPERMERCADO SOL 185,90
+    """)
     var descricao: String
+
 
     @Guide(description: """
     Copie o valor monetário exatamente como aparece
