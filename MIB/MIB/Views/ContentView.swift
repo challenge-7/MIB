@@ -1,4 +1,3 @@
-
 import SwiftUI
 import SwiftData
 import UniformTypeIdentifiers
@@ -20,6 +19,11 @@ struct ContentView: View {
     @State private var mostrarArquivos = false
     @State private var mostrarDescarte = false
     @State private var erroSalvamento: String?
+
+    // Identificação do banco
+    @State private var nomeBanco: String?
+    @State private var erroBanco: String?
+    @State private var identificandoBanco = false
 
     var body: some View {
         NavigationStack {
@@ -56,6 +60,11 @@ struct ContentView: View {
                 do {
                     let urls = try resultado.get()
                     viewModel.importarPDFs(urls)
+
+                    // Identifica o banco da primeira fatura selecionada
+                    if let primeiraURL = urls.first {
+                        analisarBanco(primeiraURL)
+                    }
                 } catch {
                     erroSalvamento = error.localizedDescription
                 }
@@ -124,6 +133,21 @@ struct ContentView: View {
                     .font(.subheadline)
                 }
 
+                // Identificação do banco
+                if identificandoBanco {
+                    ProgressView("Identificando instituição financeira...")
+                }
+
+                if let nomeBanco {
+                    Label(nomeBanco, systemImage: "building.columns")
+                        .font(.headline)
+                }
+
+                if let erroBanco {
+                    Text(erroBanco)
+                        .foregroundStyle(.red)
+                        .font(.caption)
+                }
 
                 if !viewModel.faturas.isEmpty {
                     Button {
@@ -203,6 +227,29 @@ struct ContentView: View {
             .padding()
         }
     }
+
+    // MARK: - Identificação do banco
+
+    private func analisarBanco(_ url: URL) {
+
+        nomeBanco = nil
+        erroBanco = nil
+        identificandoBanco = true
+
+        Task {
+
+            defer { identificandoBanco = false }
+
+            do {
+                nomeBanco = try await IdentificadorBancoService()
+                    .identificarBanco(no: url)
+            } catch {
+                erroBanco = error.localizedDescription
+            }
+        }
+    }
+
+    // MARK: - Concluir relatório
 
     private func concluirRelatorio() {
         do {
