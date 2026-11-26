@@ -6,66 +6,53 @@
 //
 
 import SwiftUI
-import SwiftData
 
 struct RelatorioView: View {
 
-    let fatura: FaturaSalva
+    let nome: String
+    let lancamentos: [LancamentoTemporario]
 
-    private var despesas: [Lancamento] {
-        fatura.lancamentos.filter {
-            $0.tipo != "pagamento"
+    var onConcluir: (() -> Void)? = nil
+    var onVoltar: (() -> Void)? = nil
+
+    private var despesas: [LancamentoTemporario] {
+        lancamentos.filter {
+            $0.tipo != "pagamento" &&
+            $0.tipo != "cancelado"
         }
     }
 
-    private var categoriasAgrupadas: [String: [Lancamento]] {
+    private var categoriasAgrupadas:
+        [String: [LancamentoTemporario]] {
+
         Dictionary(grouping: despesas) {
             $0.categoria
         }
     }
 
     private var totalGeral: Int {
-        despesas.reduce(0) { total, lancamento in
-            total + valorLiquido(lancamento)
+        despesas.reduce(0) { resultado, item in
+            resultado + valorLiquido(item)
         }
     }
 
-
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
+            VStack(alignment: .leading, spacing: 20) {
 
-                // Resumo geral
+                Text(nome)
+                    .font(.title2.bold())
 
-                VStack(alignment: .leading, spacing: 8) {
+                Text("Total de gastos")
+                    .foregroundStyle(.secondary)
 
-                    Text("Total de gastos")
-                        .foregroundStyle(.secondary)
-
-                    Text(formatarReais(totalGeral))
-                        .font(.largeTitle.bold())
-
-                    Text(fatura.nomeArquivo)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
+                Text(formatarReais(totalGeral))
+                    .font(.largeTitle.bold())
 
                 Divider()
 
-                // Gastos por categoria
-
                 Text("Gastos por categoria")
                     .font(.title2.bold())
-
-                if despesas.isEmpty {
-                    ContentUnavailableView(
-                        "Nenhuma despesa encontrada",
-                        systemImage: "tray",
-                        description: Text(
-                            "Não foram identificadas despesas nesta fatura."
-                        )
-                    )
-                }
 
                 ForEach(
                     categoriasAgrupadas.keys.sorted(),
@@ -75,15 +62,10 @@ struct RelatorioView: View {
                     let itens = categoriasAgrupadas[categoria] ?? []
 
                     let totalCategoria = itens.reduce(0) {
-                        total, lancamento in
-
-                        total + valorLiquido(lancamento)
+                        $0 + valorLiquido($1)
                     }
 
-                    VStack(
-                        alignment: .leading,
-                        spacing: 12
-                    ) {
+                    VStack(alignment: .leading, spacing: 12) {
 
                         HStack {
                             Text(categoria)
@@ -95,58 +77,65 @@ struct RelatorioView: View {
                                 .font(.headline)
                         }
 
-                        ForEach(itens) { lancamento in
+                        ForEach(itens) { item in
+                            HStack {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(item.descricao)
 
-                            HStack(alignment: .top) {
-
-                                VStack(
-                                    alignment: .leading,
-                                    spacing: 4
-                                ) {
-
-                                    Text(lancamento.descricao)
-                                        .font(.subheadline)
-
-                                    Text(lancamento.data)
+                                    Text(item.data)
                                         .font(.caption)
+                                        .foregroundStyle(.secondary)
+
+                                    Text(item.nomeArquivoOrigem)
+                                        .font(.caption2)
                                         .foregroundStyle(.secondary)
                                 }
 
                                 Spacer()
 
-                                Text(
-                                    formatarReais(
-                                        lancamento.valorCentavos
-                                    )
-                                )
-                                .font(.subheadline)
+                                Text(formatarReais(item.valorCentavos))
                             }
                         }
                     }
-                    .padding(.vertical, 8)
 
                     Divider()
+                }
+
+                if let onVoltar {
+                    Button("Voltar para revisão") {
+                        onVoltar()
+                    }
+                    .buttonStyle(.bordered)
+                }
+
+                if let onConcluir {
+                    Button {
+                        onConcluir()
+                    } label: {
+                        Text("Concluir")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
                 }
             }
             .padding()
         }
         .navigationTitle("Relatório")
-        .navigationBarTitleDisplayMode(.inline)
     }
 
     private func valorLiquido(
-        _ lancamento: Lancamento
+        _ item: LancamentoTemporario
     ) -> Int {
 
-        switch lancamento.tipo {
+        switch item.tipo {
 
         case "compra", "encargo":
-            return lancamento.valorCentavos
+            return item.valorCentavos
 
         case "estorno":
-            return -lancamento.valorCentavos
+            return -item.valorCentavos
 
-        case "pagamento":
+        case "pagamento", "cancelado":
             return 0
 
         default:
@@ -155,10 +144,7 @@ struct RelatorioView: View {
     }
 
     private func formatarReais(_ centavos: Int) -> String {
-
-        let valor = Decimal(centavos) / 100
-
-        return valor.formatted(
+        (Decimal(centavos) / 100).formatted(
             .currency(code: "BRL")
             .locale(Locale(identifier: "pt_BR"))
         )

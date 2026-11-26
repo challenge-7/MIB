@@ -35,6 +35,7 @@ struct LancamentoExtraido {
 
     @Guide(.anyOf([
         "Alimentação",
+        "Compras",
         "Transporte",
         "Moradia",
         "Saúde",

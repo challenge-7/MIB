@@ -1,3 +1,4 @@
+
 import SwiftUI
 import SwiftData
 import UniformTypeIdentifiers
@@ -8,166 +9,208 @@ struct ContentView: View {
     private var contexto
 
     @Query(
-        sort: \FaturaSalva.dataImportacao,
+        sort: \Relatorio.dataCriacao,
         order: .reverse
     )
-    private var faturasSalvas: [FaturaSalva]
+    private var relatoriosSalvos: [Relatorio]
 
     @StateObject
     private var viewModel = ImportacaoViewModel()
 
-    @State
-    private var mostrarArquivos = false
+    @State private var mostrarArquivos = false
+    @State private var mostrarDescarte = false
+    @State private var erroSalvamento: String?
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 24) {
+            Group {
+                switch viewModel.etapa {
 
-                    // MARK: - Importação
+                case .importacao:
+                    telaImportacao
 
-                    VStack(alignment: .leading, spacing: 12) {
+                case .revisao:
+                    RevisaoView(viewModel: viewModel)
 
-                        Text("Controle de gastos")
-                            .font(.title2.bold())
-
-                        Text("Importe sua fatura e descubra como seus gastos estão distribuídos.")
-                            .foregroundStyle(.secondary)
-
-                        Button {
-                            mostrarArquivos = true
-                        } label: {
-                            Label(
-                                "Selecionar fatura PDF",
-                                systemImage: "doc.badge.plus"
-                            )
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .disabled(viewModel.processando)
-
-                        if let nome = viewModel.nomeArquivo {
-                            Label(nome, systemImage: "doc.text")
-                                .font(.subheadline)
-                        }
-
-                        Text(viewModel.mensagem)
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-
-                        if viewModel.processando {
-                            VStack(alignment: .leading, spacing: 8) {
-                                ProgressView()
-
-                                Text("Interpretando os lançamentos...")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
+                case .previa:
+                    if let temporario = viewModel.relatorioTemporario {
+                        RelatorioView(
+                            nome: temporario.nome,
+                            lancamentos: temporario.lancamentos,
+                            onConcluir: {
+                                concluirRelatorio()
+                            },
+                            onVoltar: {
+                                viewModel.voltarParaRevisao()
                             }
-                        }
-
-                        Button {
-                            Task {
-                                await viewModel.analisarESalvar(
-                                    contexto: contexto
-                                )
-                            }
-                        } label: {
-                            Text("Gerar relatório")
-                                .frame(maxWidth: .infinity)
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .disabled(
-                            viewModel.nomeArquivo == nil ||
-                            viewModel.processando
                         )
                     }
-
-                    Divider()
-
-                    // MARK: - Histórico
-
-                    VStack(alignment: .leading, spacing: 12) {
-
-                        Text("Relatórios salvos")
-                            .font(.title2.bold())
-
-                        if faturasSalvas.isEmpty {
-
-                            ContentUnavailableView(
-                                "Nenhum relatório",
-                                systemImage: "doc.text",
-                                description: Text(
-                                    "Seus relatórios aparecerão aqui após a análise."
-                                )
-                            )
-
-                        } else {
-
-                            ForEach(faturasSalvas) { fatura in
-
-                                NavigationLink {
-                                    RelatorioView(fatura: fatura)
-                                } label: {
-
-                                    HStack(spacing: 12) {
-
-                                        Image(systemName: "doc.text")
-                                            .font(.title2)
-
-                                        VStack(
-                                            alignment: .leading,
-                                            spacing: 4
-                                        ) {
-                                            Text(fatura.nomeArquivo)
-                                                .font(.headline)
-
-                                            Text(
-                                                fatura.dataImportacao,
-                                                format: .dateTime
-                                                    .day()
-                                                    .month()
-                                                    .year()
-                                            )
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
-                                        }
-
-                                        Spacer()
-
-                                        Image(systemName: "chevron.right")
-                                            .foregroundStyle(.secondary)
-                                    }
-                                    .padding()
-                                    .background(
-                                        Color(.secondarySystemBackground),
-                                        in: RoundedRectangle(
-                                            cornerRadius: 12
-                                        )
-                                    )
-                                }
-                                .buttonStyle(.plain)
-                            }
-                        }
-                    }
                 }
-                .padding()
             }
             .navigationTitle("MIB")
             .fileImporter(
                 isPresented: $mostrarArquivos,
-                allowedContentTypes: [.pdf]
+                allowedContentTypes: [.pdf],
+                allowsMultipleSelection: true
             ) { resultado in
-
                 do {
-                    let url = try resultado.get()
-
-                    viewModel.importarPDF(de: url)
-
+                    let urls = try resultado.get()
+                    viewModel.importarPDFs(urls)
                 } catch {
-                    print(
-                        "Erro ao selecionar arquivo: \(error)"
-                    )
+                    erroSalvamento = error.localizedDescription
                 }
             }
+            .alert(
+                "Erro",
+                isPresented: Binding(
+                    get: { erroSalvamento != nil },
+                    set: { if !$0 { erroSalvamento = nil } }
+                )
+            ) {
+                Button("OK", role: .cancel) {
+                    erroSalvamento = nil
+                }
+            } message: {
+                Text(erroSalvamento ?? "")
+            }
+            .toolbar {
+                if viewModel.etapa != .importacao {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("Descartar", role: .destructive) {
+                            mostrarDescarte = true
+                        }
+                    }
+                }
+            }
+            .confirmationDialog(
+                "Descartar relatório?",
+                isPresented: $mostrarDescarte
+            ) {
+                Button("Descartar", role: .destructive) {
+                    viewModel.descartar()
+                }
+            } message: {
+                Text("As alterações não serão salvas.")
+            }
+        }
+    }
+
+    private var telaImportacao: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+
+                Text("Suas faturas, uma só visão.")
+                    .font(.title2.bold())
+
+                Text(viewModel.mensagem)
+                    .foregroundStyle(.secondary)
+
+                Button {
+                    mostrarArquivos = true
+                } label: {
+                    Label(
+                        "Importar faturas",
+                        systemImage: "doc.badge.plus"
+                    )
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(viewModel.processando)
+
+                ForEach(viewModel.faturas) { fatura in
+                    Label(
+                        fatura.nomeArquivo,
+                        systemImage: "doc.text"
+                    )
+                    .font(.subheadline)
+                }
+
+
+                if !viewModel.faturas.isEmpty {
+                    Button {
+                        Task {
+                            await viewModel.analisarFaturas()
+                        }
+                    } label: {
+                        Text("Gerar relatório")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(viewModel.processando)
+                }
+
+                if viewModel.processando {
+                    VStack(alignment: .leading, spacing: 8) {
+                        ProgressView(value: viewModel.progresso)
+
+                        Text("Interpretando as faturas...")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                Divider()
+
+                Text("Histórico de relatórios")
+                    .font(.title2.bold())
+
+                if relatoriosSalvos.isEmpty {
+                    ContentUnavailableView(
+                        "Nenhum relatório salvo",
+                        systemImage: "doc.text",
+                        description: Text(
+                            "Seus relatórios concluídos aparecerão aqui."
+                        )
+                    )
+                } else {
+                    ForEach(relatoriosSalvos) { relatorio in
+                        NavigationLink {
+                            RelatorioView(
+                                nome: relatorio.nome,
+                                lancamentos: relatorio.lancamentos.map {
+                                    LancamentoTemporario(
+                                        data: $0.data,
+                                        descricao: $0.descricao,
+                                        valorCentavos: $0.valorCentavos,
+                                        tipo: $0.tipo,
+                                        categoria: $0.categoria,
+                                        nomeArquivoOrigem:
+                                            $0.nomeArquivoOrigem
+                                    )
+                                }
+                            )
+                        } label: {
+                            HStack {
+                                Image(systemName: "doc.text")
+
+                                VStack(alignment: .leading) {
+                                    Text(relatorio.nome)
+                                        .font(.headline)
+
+                                    Text(relatorio.dataCriacao, style: .date)
+                                        .font(.caption)
+                                }
+
+                                Spacer()
+
+                                Image(systemName: "chevron.right")
+                            }
+                            .padding()
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+            .padding()
+        }
+    }
+
+    private func concluirRelatorio() {
+        do {
+            try viewModel.concluirRelatorio(
+                contexto: contexto
+            )
+        } catch {
+            erroSalvamento = error.localizedDescription
         }
     }
 }

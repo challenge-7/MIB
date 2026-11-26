@@ -1,5 +1,5 @@
 //
-//  Fatura.swift
+//  Relatorio.swift
 //  MIB
 //
 //  Created by Gabriel Groppo on 25/11/26.
@@ -9,21 +9,21 @@ import Foundation
 import SwiftData
 
 @Model
-final class FaturaSalva {
+final class Relatorio {
 
-    var nomeArquivo: String
-    var dataImportacao: Date
+    var nome: String
+    var dataCriacao: Date
 
     @Relationship(deleteRule: .cascade)
     var lancamentos: [Lancamento] = []
 
     init(
-        nomeArquivo: String,
-        dataImportacao: Date = .now,
+        nome: String,
+        dataCriacao: Date = .now,
         lancamentos: [Lancamento] = []
     ) {
-        self.nomeArquivo = nomeArquivo
-        self.dataImportacao = dataImportacao
+        self.nome = nome
+        self.dataCriacao = dataCriacao
         self.lancamentos = lancamentos
     }
 }

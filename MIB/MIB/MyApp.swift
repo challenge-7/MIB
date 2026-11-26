@@ -3,13 +3,12 @@ import SwiftData
 
 @main
 struct MyApp: App {
-
     var body: some Scene {
         WindowGroup {
             ContentView()
         }
         .modelContainer(for: [
-            FaturaSalva.self,
+            Relatorio.self,
             Lancamento.self
         ])
     }

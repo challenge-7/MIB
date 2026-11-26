@@ -16,18 +16,21 @@ final class Lancamento {
     var valorCentavos: Int
     var tipo: String
     var categoria: String
+    var nomeArquivoOrigem: String
 
     init(
         data: String,
         descricao: String,
         valorCentavos: Int,
         tipo: String,
-        categoria: String
+        categoria: String,
+        nomeArquivoOrigem: String
     ) {
         self.data = data
         self.descricao = descricao
         self.valorCentavos = valorCentavos
         self.tipo = tipo
         self.categoria = categoria
+        self.nomeArquivoOrigem = nomeArquivoOrigem
     }
 }

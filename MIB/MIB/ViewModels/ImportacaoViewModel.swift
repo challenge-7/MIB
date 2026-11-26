@@ -9,135 +9,273 @@ import Foundation
 import SwiftData
 import Combine
 
+enum EtapaRelatorio {
+    case importacao
+    case revisao
+    case previa
+}
+
 @MainActor
 final class ImportacaoViewModel: ObservableObject {
 
-    @Published private(set) var nomeArquivo: String?
-    @Published private(set) var textoPDF = ""
-    @Published private(set) var mensagem = "Selecione uma fatura PDF."
+    @Published private(set) var faturas: [FaturaImportada] = []
+    @Published var relatorioTemporario: RelatorioTemporario?
+
+    @Published private(set) var etapa: EtapaRelatorio = .importacao
     @Published private(set) var processando = false
-    @Published private(set) var faturaSalva: FaturaSalva?
+    @Published private(set) var mensagem = "Selecione suas faturas."
+    @Published private(set) var progresso = 0.0
 
     private let leitorPDF = LeitorPDFService()
     private let interpretador = InterpretadorFaturaService()
 
-    func importarPDF(de url: URL) {
 
-        guard !processando else {
-            return
-        }
+    func importarPDFs(_ urls: [URL]) {
+
+        guard !processando else { return }
+
+        var novasFaturas: [FaturaImportada] = []
 
         do {
-            let texto = try leitorPDF.extrairTexto(de: url)
+            for url in urls {
+                let texto = try leitorPDF.extrairTexto(de: url)
 
-            nomeArquivo = url.lastPathComponent
-            textoPDF = texto
-            faturaSalva = nil
+                novasFaturas.append(
+                    FaturaImportada(
+                        nomeArquivo: url.lastPathComponent,
+                        textoExtraido: texto
+                    )
+                )
+            }
 
-            mensagem = "Fatura importada com sucesso."
+            guard !novasFaturas.isEmpty else {
+                mensagem = "Nenhum PDF foi selecionado."
+                return
+            }
+
+            faturas = novasFaturas
+            relatorioTemporario = nil
+            progresso = 0
+            etapa = .importacao
+
+            mensagem = "\(faturas.count) fatura(s) importada(s)."
 
         } catch {
-            nomeArquivo = nil
-            textoPDF = ""
-            faturaSalva = nil
-
-            mensagem = "Erro ao importar: \(error.localizedDescription)"
+            mensagem = "Erro na importação: \(error.localizedDescription)"
         }
     }
 
-    func analisarESalvar(contexto: ModelContext) async {
+    func analisarFaturas() async {
 
-        guard !processando else {
-            return
-        }
+        guard !processando else { return }
 
-        guard let nomeArquivo = nomeArquivo,
-              !textoPDF.isEmpty else {
-            mensagem = "Importe uma fatura antes de analisar."
+        guard !faturas.isEmpty else {
+            mensagem = "Selecione pelo menos uma fatura."
             return
         }
 
         processando = true
-        faturaSalva = nil
+        progresso = 0
 
         defer {
             processando = false
         }
 
-        mensagem = "Interpretando fatura com Apple Intelligence..."
+        var lancamentos: [LancamentoTemporario] = []
 
         do {
+            for (indice, fatura) in faturas.enumerated() {
 
-            // 1. Solicitar a interpretação
-            let lancamentosExtraidos = try await interpretador.interpretar(
-                texto: textoPDF
-            )
+                mensagem = """
+                Analisando \(indice + 1) de \(faturas.count):
+                \(fatura.nomeArquivo)
+                """
 
-            guard !lancamentosExtraidos.isEmpty else {
-                mensagem = "Nenhum lançamento foi identificado."
+                let extraidos = try await interpretador.interpretar(
+                    texto: fatura.textoExtraido
+                )
+
+                for item in extraidos {
+
+                    guard let valor = ConversorMonetario
+                        .converterParaCentavos(item.valorOriginal) else {
+
+                        throw ErroRelatorio.valorInvalido(
+                            item.descricao,
+                            item.valorOriginal
+                        )
+                    }
+
+                    guard valor != Int.min else {
+                        throw ErroRelatorio.valorInvalido(
+                            item.descricao,
+                            item.valorOriginal
+                        )
+                    }
+
+                    let tipo = item.tipo
+                    let categoria = tipo == "estorno"
+                        ? "Estornos"
+                        : item.categoria
+
+                    lancamentos.append(
+                        LancamentoTemporario(
+                            data: item.data,
+                            descricao: item.descricao,
+                            valorCentavos: abs(valor),
+                            tipo: tipo,
+                            categoria: categoria,
+                            nomeArquivoOrigem: fatura.nomeArquivo
+                        )
+                    )
+                }
+
+                progresso = Double(indice + 1)
+                    / Double(faturas.count)
+            }
+
+            guard !lancamentos.isEmpty else {
+                mensagem = "Nenhum lançamento identificado."
                 return
             }
 
-            // 2. Converter os lançamentos
-            var lancamentos: [Lancamento] = []
+            
+            let dataFormatada = Date.now.formatted(
+                .dateTime.month().year()
+            )
 
-            for item in lancamentosExtraidos {
-
-                guard let centavos = ConversorMonetario.converterParaCentavos(
-                    item.valorOriginal
-                ) else {
-                    mensagem = """
-                    Valor inválido no lançamento:
-                    \(item.descricao) — \(item.valorOriginal)
-
-                    A fatura não foi salva.
-                    """
-                    return
-                }
-
-                // O valor armazenado representa a magnitude.
-                // O tipo define se é compra, estorno ou pagamento.
-                let valorAbsoluto = centavos < 0
-                    ? -centavos
-                    : centavos
-
-                let lancamento = Lancamento(
-                    data: item.data,
-                    descricao: item.descricao,
-                    valorCentavos: valorAbsoluto,
-                    tipo: item.tipo,
-                    categoria: item.categoria
-                )
-
-                lancamentos.append(lancamento)
-            }
-
-            // 3. Criar a fatura
-            let novaFatura = FaturaSalva(
-                nomeArquivo: nomeArquivo,
+            relatorioTemporario = RelatorioTemporario(
+                nome: "Relatório de \(dataFormatada)",
                 lancamentos: lancamentos
             )
 
-            // 4. Persistir no SwiftData
-            contexto.insert(novaFatura)
 
-            do {
-                try contexto.save()
-            } catch {
-                contexto.delete(novaFatura)
-                throw error
-            }
-
-            // 5. Informar o resultado à interface
-            faturaSalva = novaFatura
-
-            mensagem = """
-            Fatura analisada e salva com sucesso!
-            \(lancamentos.count) lançamentos identificados.
-            """
+            mensagem = "Interpretação concluída. Revise os gastos."
+            etapa = .revisao
 
         } catch {
+            // Não aproveitamos um resultado incompleto.
+            relatorioTemporario = nil
+            progresso = 0
             mensagem = "Erro na análise: \(error.localizedDescription)"
+        }
+    }
+
+    func atualizarCategoria(
+        id: UUID,
+        categoria: String
+    ) {
+        guard let indice = relatorioTemporario?
+            .lancamentos.firstIndex(where: { $0.id == id }) else {
+            return
+        }
+
+        relatorioTemporario?
+            .lancamentos[indice].categoria = categoria
+    }
+
+    func atualizarTipo(
+        id: UUID,
+        tipo: String
+    ) {
+        guard let indice = relatorioTemporario?
+            .lancamentos.firstIndex(where: { $0.id == id }) else {
+            return
+        }
+
+        relatorioTemporario?
+            .lancamentos[indice].tipo = tipo
+
+        if tipo == "estorno" {
+            relatorioTemporario?
+                .lancamentos[indice].categoria = "Estornos"
+
+        } else if relatorioTemporario?
+            .lancamentos[indice].categoria == "Estornos" {
+
+            relatorioTemporario?
+                .lancamentos[indice].categoria = "Outros"
+        }
+    }
+
+    func atualizarNome(_ nome: String) {
+        relatorioTemporario?.nome = nome
+    }
+
+    func visualizarRelatorio() {
+        guard let relatorioTemporario,
+              !relatorioTemporario.nome
+                .trimmingCharacters(in: .whitespaces)
+                .isEmpty else {
+            mensagem = "Informe um nome para o relatório."
+            return
+        }
+
+        etapa = .previa
+    }
+
+    func voltarParaRevisao() {
+        etapa = .revisao
+    }
+
+    func concluirRelatorio(contexto: ModelContext) throws {
+
+        guard etapa == .previa,
+              let temporario = relatorioTemporario else {
+            return
+        }
+
+        let lancamentos = temporario.lancamentos.map { item in
+            Lancamento(
+                data: item.data,
+                descricao: item.descricao,
+                valorCentavos: item.valorCentavos,
+                tipo: item.tipo,
+                categoria: item.categoria,
+                nomeArquivoOrigem: item.nomeArquivoOrigem
+            )
+        }
+
+        let relatorio = Relatorio(
+            nome: temporario.nome,
+            lancamentos: lancamentos
+        )
+
+        contexto.insert(relatorio)
+
+        do {
+            try contexto.save()
+        } catch {
+            contexto.rollback()
+            throw error
+        }
+
+        // Limpa os dados temporários após salvar.
+        faturas = []
+        relatorioTemporario = nil
+        progresso = 0
+        etapa = .importacao
+        mensagem = "Relatório salvo com sucesso!"
+    }
+
+    func descartar() {
+        guard !processando else { return }
+
+        faturas = []
+        relatorioTemporario = nil
+        progresso = 0
+        etapa = .importacao
+        mensagem = "Selecione suas faturas."
+    }
+}
+
+enum ErroRelatorio: LocalizedError {
+    case valorInvalido(String, String)
+
+    var errorDescription: String? {
+        switch self {
+        case .valorInvalido(let descricao, let valor):
+            return "Valor inválido em \(descricao): \(valor)"
         }
     }
 }

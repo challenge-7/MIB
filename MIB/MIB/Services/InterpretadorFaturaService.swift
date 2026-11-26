@@ -88,9 +88,16 @@ struct InterpretadorFaturaService {
         - Uber, táxi, ônibus e transporte: Transporte.
         - Aluguel e despesas residenciais: Moradia.
         - Farmácias e serviços médicos: Saúde.
-        - Cinema, shows e entretenimento: Lazer.
-        - Serviços de assinatura: Assinaturas.
+        - Lazer: cinema, shows, parques e atividades de entretenimento
+          pagas individualmente.
+        - Assinaturas: serviços contratados por assinatura,
+          incluindo plataformas de streaming como Netflix,
+          Spotify, Disney+ e outros serviços semelhantes.
+        - Quando um serviço de entretenimento funcionar por
+          assinatura, priorize a categoria "Assinaturas"
+          em vez de "Lazer".
         - Estornos e reembolsos: Estornos.
+        - Compras em lojas de roupas, papelaria, utensílios: Compras
         - Descrições desconhecidas: Outros.
 
         REGRAS DE CATEGORIAS:
@@ -98,7 +105,7 @@ struct InterpretadorFaturaService {
           obrigatoriamente a categoria "Estornos".
         - Um estabelecimento desconhecido deve ir para "Outros".
         - Não atribua categorias sem evidências suficientes.
-        - Pagamentos da fatura não representam novas despesas.
+        - Pagamentos que aparacem na fatura não representam novas despesas logo nao precisam estar presentes no relatório.
 
         REGRAS PARA COMPRAS PARCELADAS:
         - Identifique separadamente o número da parcela
