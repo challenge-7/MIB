@@ -96,6 +96,229 @@ final class ImportacaoViewModel: ObservableObject {
 
                 print("⏱️ Iniciando interpretação: \(fatura.nomeArquivo)")
 
+                
+                let divisor = DivisorFaturaService()
+
+                let blocos = divisor.dividirTexto(
+                    fatura.textoExtraido
+                )
+
+                print("===== TESTE DE DIVISÃO =====")
+                print("Fatura: \(fatura.nomeArquivo)")
+                print("Quantidade de blocos: \(blocos.count)")
+
+                for (indice, bloco) in blocos.enumerated() {
+                    print("""
+                    ----- BLOCO \(indice + 1) -----
+                    Caracteres: \(bloco.count)
+                    \(bloco)
+                    """)
+                }
+                
+                let linhas = fatura.textoExtraido.components(
+                    separatedBy: .newlines
+                )
+
+                let linhasComData = linhas.filter { linha in
+
+                    let texto = linha.trimmingCharacters(
+                        in: .whitespacesAndNewlines
+                    )
+
+                    return texto.range(
+                        of: #"^\d{2}/\d{2}(?:/\d{4})?\s+"#,
+                        options: .regularExpression
+                    ) != nil
+                }
+
+                print("===== IDENTIFICAÇÃO DE TRANSAÇÕES =====")
+                print("Linhas iniciadas por data: \(linhasComData.count)")
+
+                
+                var textoParaAgrupar = fatura.textoExtraido
+
+                if let intervalo = textoParaAgrupar.range(
+                    of: "Compras parceladas - próximas faturas",
+                    options: [.caseInsensitive, .diacriticInsensitive]
+                ) {
+                    textoParaAgrupar = String(
+                        textoParaAgrupar[..<intervalo.lowerBound]
+                    )
+                }
+
+                let grupos = divisor.agruparLinhasPorTransacao(
+                    textoParaAgrupar
+                )
+
+                print("Grupos após remover parcelas futuras: \(grupos.count)")
+
+
+                print("===== AGRUPAMENTO =====")
+                print("Grupos encontrados: \(grupos.count)")
+
+                for (indice, grupo) in grupos.enumerated() {
+
+                    let linhas = grupo.components(
+                        separatedBy: .newlines
+                    )
+
+                    if linhas.count != 2 {
+
+                        print("===== GRUPO \(indice + 1) =====")
+                        print("Quantidade de linhas: \(linhas.count)")
+                        print(grupo)
+                    }
+                }
+
+               
+                let gruposParaAnalise = grupos.filter { grupo in
+
+                    let texto = grupo.folding(
+                        options: [.caseInsensitive, .diacriticInsensitive],
+                        locale: Locale(identifier: "pt_BR")
+                    )
+
+                    return !texto.contains("pagamento via conta")
+                }
+
+                let lotes = divisor.criarLotes(
+                    grupos: gruposParaAnalise
+                )
+
+                
+                print("===== CONFERÊNCIA DOS LOTES =====")
+
+                var totalGrupos = 0
+
+                for (indice, lote) in lotes.enumerated() {
+
+                    let quantidadeGrupos = lote.components(
+                        separatedBy: "\n\n"
+                    ).count
+
+                    totalGrupos += quantidadeGrupos
+
+                    print(
+                        "Lote \(indice + 1): " +
+                        "\(quantidadeGrupos) grupos enviados"
+                    )
+                }
+
+                print("Total de grupos enviados: \(totalGrupos)")
+
+                
+                print("===== VALIDAÇÃO DOS LOTES =====")
+                print("Grupos originais: \(grupos.count)")
+                print("Grupos para análise: \(gruposParaAnalise.count)")
+                print("Lotes: \(lotes.count)")
+
+
+                print("===== LOTES PARA A IA =====")
+                print("Quantidade de lotes: \(lotes.count)")
+
+                for (indice, lote) in lotes.enumerated() {
+                    print(
+                        "Lote \(indice + 1): \(lote.count) caracteres"
+                    )
+                }
+                
+                let linhasOriginais = fatura.textoExtraido.components(
+                    separatedBy: .newlines
+                )
+
+                for (indice, linha) in linhasOriginais.enumerated() {
+
+                    if linha.localizedCaseInsensitiveContains("Repasse de IOF") {
+
+                        print("===== DIAGNÓSTICO IOF =====")
+
+                        let inicio = max(0, indice - 1)
+                        let fim = min(linhasOriginais.count, indice + 5)
+
+                        for posicao in inicio..<fim {
+                            print("[\(posicao)] \(linhasOriginais[posicao])")
+                        }
+                    }
+                }
+
+                let iofInternacional = divisor.extrairIOFInternacional(
+                    fatura.textoExtraido
+                )
+
+                print("===== IOF IDENTIFICADO =====")
+                print("Valor: \(iofInternacional ?? "Não encontrado")")
+                
+                
+
+                print("===== TESTE DE MÚLTIPLOS LOTES =====")
+
+                var todosExtraidos: [LancamentoExtraido] = []
+
+                let inicioTotal = Date()
+
+                for (indice, lote) in lotes.enumerated() {
+
+                    print("Iniciando lote \(indice + 1) de \(lotes.count)")
+                    print("Caracteres: \(lote.count)")
+
+                    let inicioLote = Date()
+
+                    let resultado = try await interpretador.interpretar(
+                        texto: lote
+                    )
+
+                    let tempoLote = Date().timeIntervalSince(inicioLote)
+
+                    print(
+                        "Lote \(indice + 1) concluído em " +
+                        "\(String(format: "%.2f", tempoLote)) segundos"
+                    )
+
+                    print("Lançamentos: \(resultado.count)")
+
+                    todosExtraidos.append(contentsOf: resultado)
+                }
+
+                let tempoTotal = Date().timeIntervalSince(inicioTotal)
+
+                print("===== RESULTADO CONSOLIDADO =====")
+                print("Total de lançamentos: \(todosExtraidos.count)")
+                print(
+                    "Tempo total: " +
+                    "\(String(format: "%.2f", tempoTotal)) segundos"
+                )
+
+                let totalCentavos = todosExtraidos.reduce(0) { soma, item in
+
+                    guard let valor = ConversorMonetario.converterParaCentavos(
+                        item.valorOriginal
+                    ) else {
+                        return soma
+                    }
+
+                    switch item.tipo {
+                    case "compra", "encargo":
+                        return soma + abs(valor)
+                    case "estorno":
+                        return soma - abs(valor)
+                    default:
+                        return soma
+                    }
+                }
+
+                print(
+                    "Total extraído sem IOF complementar: " +
+                    String(format: "R$ %.2f", Double(totalCentavos) / 100)
+                )
+
+                return
+
+
+                return
+
+                
+                return
+                
                 let extraidos = try await interpretador.interpretar(
                     texto: fatura.textoExtraido
                 )
