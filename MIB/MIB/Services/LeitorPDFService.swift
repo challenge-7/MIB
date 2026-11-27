@@ -41,13 +41,78 @@ struct LeitorPDFService {
             throw ErroLeituraPDF.documentoInvalido
         }
 
-        guard let texto = documento.string,
-              !texto.trimmingCharacters(
-                in: .whitespacesAndNewlines
-              ).isEmpty else {
+        let texto = selecionarPaginasRelevantes(
+            documento: documento
+        )
+        
+        
+        let textoOriginal = documento.string ?? ""
+
+        print("===== DIAGNÓSTICO PDF =====")
+        print("Páginas totais: \(documento.pageCount)")
+        print("Caracteres originais: \(textoOriginal.count)")
+        print("Caracteres filtrados: \(texto.count)")
+
+        if !textoOriginal.isEmpty {
+            let reducao = (
+                1 - Double(texto.count) / Double(textoOriginal.count)
+            ) * 100
+
+            print(
+                "Redução do texto: \(reducao.formatted(.number.precision(.fractionLength(1))))%"
+            )
+        }
+
+
+        guard !texto.trimmingCharacters(
+            in: .whitespacesAndNewlines
+        ).isEmpty else {
+
             throw ErroLeituraPDF.textoNaoEncontrado
         }
 
         return texto
     }
 }
+
+private func selecionarPaginasRelevantes(
+    documento: PDFDocument
+) -> String {
+
+    let indicadores = [
+        "TRANSAÇÕES",
+        "TRANSACOES",
+        "LANÇAMENTOS",
+        "LANCAMENTOS",
+        "SUAS COMPRAS",
+        "DESPESAS",
+        "DETALHAMENTO DE COMPRAS"
+    ]
+
+    var paginasRelevantes: [String] = []
+
+    for indice in 0..<documento.pageCount {
+
+        guard let pagina = documento.page(at: indice),
+              let texto = pagina.string else {
+            continue
+        }
+
+        let textoMaiusculo = texto.uppercased()
+
+        let contemTransacoes = indicadores.contains {
+            textoMaiusculo.contains($0)
+        }
+
+        if contemTransacoes {
+            paginasRelevantes.append(texto)
+        }
+    }
+
+    guard !paginasRelevantes.isEmpty else {
+        return documento.string ?? ""
+    }
+
+    return paginasRelevantes.joined(separator: "\n")
+}
+

@@ -91,9 +91,21 @@ final class ImportacaoViewModel: ObservableObject {
                 \(fatura.nomeArquivo)
                 """
 
+                
+                let inicio = Date()
+
+                print("⏱️ Iniciando interpretação: \(fatura.nomeArquivo)")
+
                 let extraidos = try await interpretador.interpretar(
                     texto: fatura.textoExtraido
                 )
+
+                let tempo = Date().timeIntervalSince(inicio)
+
+                print("✅ Fatura: \(fatura.nomeArquivo)")
+                print("⏱️ Tempo de interpretação: \(tempo) segundos")
+                print("📄 Lançamentos extraídos: \(extraidos.count)")
+
                 
                 print("Fatura: \(fatura.nomeArquivo)")
                 print("Quantidade extraída: \(extraidos.count)")
