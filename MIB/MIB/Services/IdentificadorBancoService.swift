@@ -5,7 +5,6 @@
 //  Created by Lucas on 26/11/26.
 //
 
-
 import Foundation
 import FoundationModels
 import PDFKit

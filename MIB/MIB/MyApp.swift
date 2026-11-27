@@ -5,7 +5,7 @@ import SwiftData
 struct MyApp: App {
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            ResultadoFaturaView()   
         }
         .modelContainer(for: [
             Relatorio.self,
@@ -13,4 +13,3 @@ struct MyApp: App {
         ])
     }
 }
-//commit teste pra atualizar nome da branch
